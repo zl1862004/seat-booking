@@ -239,18 +239,18 @@ class SeatBookingBot:
                 return False
             time.sleep(0.5)
 
-        # 备选2: 同区域不同时段
-        for tid in FALLBACK_TIMES:
-            r = self.post_apply(TARGET_AREA_ID, tid, TARGET_SEAT_NO)
+        # 备选2: 其他区域目标时段(20:00-22:00)
+        for aid in FALLBACK_AREAS:
+            r = self.post_apply(aid, TARGET_TIME_ID)
             if r == "success":
                 return True
             if r == "limit_exceeded":
                 return False
             time.sleep(0.5)
 
-        # 备选3: 其他区域目标时段
-        for aid in FALLBACK_AREAS:
-            r = self.post_apply(aid, TARGET_TIME_ID)
+        # 备选3: 同区域不同时段
+        for tid in FALLBACK_TIMES:
+            r = self.post_apply(TARGET_AREA_ID, tid, TARGET_SEAT_NO)
             if r == "success":
                 return True
             if r == "limit_exceeded":
