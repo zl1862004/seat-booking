@@ -4,16 +4,18 @@ on:
   schedule:
     # 主力：每天 00:01 北京时间 (UTC 16:01 前一天)
     - cron: '1 16 * * *'
-    # 备用1：00:03 北京时间
+    # 备用1：00:03
     - cron: '3 16 * * *'
-    # 备用2：00:05 北京时间
+    # 备用2：00:05
     - cron: '5 16 * * *'
   workflow_dispatch: # 支持手动触发
+
+permissions:
+  contents: write # 允许 push keepalive 文件
 
 jobs:
   book-seat:
     runs-on: ubuntu-latest
-    # 防止同一时间重复执行（如果上一次还没跑完）
     concurrency:
       group: seat-booking
       cancel-in-progress: false
@@ -31,10 +33,7 @@ jobs:
         run: pip install requests
 
       - name: Run booking script
-        id: booking
-        run: |
-          python main.py
-          echo "exit_code=$?" >> $GITHUB_OUTPUT
+        run: python main.py
 
       - name: Check result
         if: failure()
@@ -45,9 +44,13 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs: book-seat
+    permissions:
+      contents: write
     steps:
       - name: Keep repo alive
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
       - name: Touch timestamp
         run: |
           date > .last-run
