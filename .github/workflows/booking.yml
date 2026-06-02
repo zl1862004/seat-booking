@@ -2,16 +2,13 @@ name: 每日座位预约
 
 on:
   schedule:
-    # 主力：每天 00:01 北京时间 (UTC 16:01 前一天)
+    # 主力：每天 00:01 北京时间 (UTC 16:01)
     - cron: '1 16 * * *'
     # 备用1：00:03
     - cron: '3 16 * * *'
     # 备用2：00:05
     - cron: '5 16 * * *'
-  workflow_dispatch: # 支持手动触发
-
-permissions:
-  contents: write # 允许 push keepalive 文件
+  workflow_dispatch:
 
 jobs:
   book-seat:
@@ -34,28 +31,3 @@ jobs:
 
       - name: Run booking script
         run: python main.py
-
-      - name: Check result
-        if: failure()
-        run: echo "::error::座位预约失败，请检查！"
-
-  # 自保活：保持仓库活跃，防止 GitHub 禁用 Actions
-  keepalive:
-    runs-on: ubuntu-latest
-    if: always()
-    needs: book-seat
-    permissions:
-      contents: write
-    steps:
-      - name: Keep repo alive
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: true
-      - name: Touch timestamp
-        run: |
-          date > .last-run
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .last-run
-          git diff --cached --quiet || git commit -m "keepalive: $(date +%Y-%m-%d)"
-          git push
