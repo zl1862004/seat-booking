@@ -9,8 +9,10 @@ import logging
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
-STU_ID = "2024506081"
-STU_NAME = "张乐涵"
+import os
+
+STU_ID = os.environ.get("STU_ID", "")
+STU_NAME = os.environ.get("STU_NAME", "")
 API_BASE = "https://bfxyrun.hebeinu.edu.cn/wxseat/spaceReservation"
 LOGIN_URL = "https://bfxyrun.hebeinu.edu.cn/__WeChat_API__/"
 APP_ID = "wx92e7591b4f77803d"

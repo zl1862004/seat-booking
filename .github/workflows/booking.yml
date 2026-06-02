@@ -30,4 +30,7 @@ jobs:
         run: pip install requests
 
       - name: Run booking script
+        env:
+          STU_ID: ${{ secrets.STU_ID }}
+          STU_NAME: ${{ secrets.STU_NAME }}
         run: python main.py
