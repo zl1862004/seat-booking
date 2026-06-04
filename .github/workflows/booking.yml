@@ -2,12 +2,8 @@ name: 每日座位预约
 
 on:
   schedule:
-    # 主力：每天 00:01 北京时间 (UTC 16:01)
+    # 兜底：cron 会延迟，仅作 CodeBuddy 401 时的最后保障
     - cron: '1 16 * * *'
-    # 备用1：00:03
-    - cron: '3 16 * * *'
-    # 备用2：00:05
-    - cron: '5 16 * * *'
   workflow_dispatch:
 
 jobs:
