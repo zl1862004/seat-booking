@@ -142,9 +142,15 @@ class SeatBookingBot:
             log.info(f"  有效预约 {len(valid)} 条，还有名额")
             return True
         log.warning(f"  有效预约达上限 {len(valid)} 条!")
-        # 优先保留目标时段+目标座位
+        # 优先保留：日期越远越优先（未来的比今天更有价值），目标时段和座位加分
         def score(i):
             s = 0
+            # 日期越远分数越高：明天+1000，后天+2000...
+            try:
+                days_ahead = (datetime.strptime(i.get("applyDate", ""), "%Y-%m-%d") - datetime.now()).days
+                s += max(days_ahead, 0) * 1000
+            except:
+                pass
             if i.get("applyTime") == TARGET_TIME_ID:
                 s += 100
             if i.get("seatId") == f"{TARGET_AREA_ID}-{TARGET_SEAT_NO}":
