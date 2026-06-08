@@ -123,6 +123,7 @@ class SeatBookingBot:
         return c
 
     def auto_cancel_if_exceeded(self):
+        """清理过期预约，有效预约绝不自动删除"""
         items = self.get_apply_list()
         if not items:
             return True
@@ -133,38 +134,23 @@ class SeatBookingBot:
                        and datetime.now().hour >= TIME_END.get(i.get("applyTime", 0), 0))]
         valid = [i for i in items if i not in expired]
         log.info(f"  预约分析: 已过期={len(expired)}条, 仍有效={len(valid)}条")
+        # 只删真正过期的
         c = 0
         for i in expired:
-            if self.cancel_apply(i.get("applyId")):
-                c += 1
-            time.sleep(0.3)
-        if len(valid) < 2:
-            log.info(f"  有效预约 {len(valid)} 条，还有名额")
-            return True
-        log.warning(f"  有效预约达上限 {len(valid)} 条!")
-        # 优先保留：日期越远越优先（未来的比今天更有价值），目标时段和座位加分
-        def score(i):
-            s = 0
-            # 日期越远分数越高：明天+1000，后天+2000...
-            try:
-                days_ahead = (datetime.strptime(i.get("applyDate", ""), "%Y-%m-%d") - datetime.now()).days
-                s += max(days_ahead, 0) * 1000
-            except:
-                pass
-            if i.get("applyTime") == TARGET_TIME_ID:
-                s += 100
-            if i.get("seatId") == f"{TARGET_AREA_ID}-{TARGET_SEAT_NO}":
-                s += 50
-            return s
-        valid.sort(key=score, reverse=True)
-        log.warning(f"  保留: {valid[0].get('applyDate', '')} {valid[0].get('timeName', '')} {valid[0].get('seatId', '')}")
-        for i in valid[1:]:
+            log.info(f"  取消过期: {i.get('applyDate','')} {i.get('timeName','')} {i.get('seatId','')}")
             if self.cancel_apply(i.get("applyId")):
                 c += 1
             time.sleep(0.3)
         if c:
-            log.info(f"  共清理 {c} 条预约")
-        return c > 0
+            log.info(f"  已清理 {c} 条过期预约")
+        # 有效预约：不删，不删，绝对不删！
+        if len(valid) >= 2:
+            log.warning(f"  ⚠️ 有效预约已达上限 {len(valid)} 条，无法自动腾名额！")
+            log.warning(f"  请手动去小程序取消不需要的预约")
+            for i in valid:
+                log.warning(f"    有效预约: {i.get('applyDate','')} {i.get('timeName','')} {i.get('seatId','')}")
+            return False  # 告知调用方名额满了
+        return True
 
     def init_config(self):
         log.info(f"获取配置... (预约日期: {self.tomorrow})")
@@ -219,9 +205,8 @@ class SeatBookingBot:
 
         if not self.login():
             return False
+        # 只清理真正过期的预约，有效预约绝不删除
         self.auto_cancel_expired()
-        if len(self.get_apply_list()) >= 2:
-            self.auto_cancel_if_exceeded()
         if not self.init_config():
             return False
 
@@ -230,12 +215,13 @@ class SeatBookingBot:
         if r == "success":
             return True
         if r == "limit_exceeded":
-            self.auto_cancel_if_exceeded()
+            # 再次清理过期预约（可能刚过期），但不删有效预约
+            self.auto_cancel_expired()
             r = self.post_apply(TARGET_AREA_ID, TARGET_TIME_ID, TARGET_SEAT_NO)
             if r == "success":
                 return True
             if r == "limit_exceeded":
-                log.error("自动清理后仍超限，请手动取消")
+                log.error("有效预约已满2条，无法继续预约，请手动去小程序取消不需要的")
                 return False
 
         # 备选1: 同区域同时段换座位
