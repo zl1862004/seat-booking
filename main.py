@@ -7,9 +7,11 @@
 """
 
 import json, time, logging, os, sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 STU_ID = os.environ.get("STU_ID", "")
 STU_NAME = os.environ.get("STU_NAME", "")
@@ -30,10 +32,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger("SeatBooking")
 
 
+def now_beijing():
+    """获取当前北京时间（无论服务器在哪个时区）"""
+    return datetime.now(BEIJING_TZ)
+
+
 def wait_until_midnight():
-    """如果距零点10分钟以内，sleep到零点再继续"""
-    now = datetime.now()
-    # 计算下一个零点
+    """如果距北京时间零点10分钟以内，sleep到零点再继续"""
+    now = now_beijing()
+    # 计算下一个北京时间零点
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
     diff = (midnight - now).total_seconds()
 
@@ -49,11 +56,11 @@ def wait_until_midnight():
             time.sleep(diff - 1.5)
         # 最后1.5秒：忙等确保精度
         while True:
-            remaining = (midnight - datetime.now()).total_seconds()
+            remaining = (midnight - now_beijing()).total_seconds()
             if remaining <= 0:
                 break
             time.sleep(0.01)  # 10ms精度
-        log.info(f"⏰ 零点到达! 立即发请求! 当前时间: {datetime.now().strftime('%H:%M:%S.%f')}")
+        log.info(f"⏰ 零点到达! 立即发请求! 当前时间: {now_beijing().strftime('%H:%M:%S.%f')}")
     else:
         # 超过10分钟，可能是手动触发或测试，不等待
         log.info(f"距零点还有 {diff/60:.1f} 分钟，直接执行(不等待)")
@@ -81,7 +88,7 @@ def http_post(url, data=None, json_data=None, headers=None, timeout=10):
 
 class SeatBookingBot:
     def __init__(self):
-        self.tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        self.tomorrow = (now_beijing() + timedelta(days=1)).strftime("%Y-%m-%d")
         self.token = None
 
     def login(self):
@@ -126,12 +133,12 @@ class SeatBookingBot:
         items = self.get_apply_list()
         if not items:
             return 0
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = now_beijing().strftime("%Y-%m-%d")
         c = 0
         for i in items:
             d = i.get("applyDate", "")
             t = i.get("applyTime", 0)
-            exp = d < today or (d == today and datetime.now().hour >= TIME_END.get(t, 0))
+            exp = d < today or (d == today and now_beijing().hour >= TIME_END.get(t, 0))
             if exp:
                 log.info(f"  过期: {d} {i.get('timeName','')} {i.get('seatId','')}")
                 if self.cancel_apply(i.get("applyId")):
@@ -146,11 +153,11 @@ class SeatBookingBot:
         items = self.get_apply_list()
         if not items:
             return True
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = now_beijing().strftime("%Y-%m-%d")
         expired = [i for i in items
                    if i.get("applyDate", "") < today
                    or (i.get("applyDate", "") == today
-                       and datetime.now().hour >= TIME_END.get(i.get("applyTime", 0), 0))]
+                       and now_beijing().hour >= TIME_END.get(i.get("applyTime", 0), 0))]
         valid = [i for i in items if i not in expired]
         # 只删除真正过期的
         c = 0
