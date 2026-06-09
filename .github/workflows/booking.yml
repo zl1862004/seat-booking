@@ -2,7 +2,6 @@ name: 每日座位预约
 
 on:
   schedule:
-    # 兜底：cron 会延迟，仅作 CodeBuddy 401 时的最后保障
     - cron: '1 16 * * *'
   workflow_dispatch:
 
@@ -17,16 +16,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install requests
-
-      - name: Run booking script
+      - name: Run booking script (无依赖，直接跑)
         env:
           STU_ID: ${{ secrets.STU_ID }}
           STU_NAME: ${{ secrets.STU_NAME }}
-        run: python main.py
+        run: python3 main.py
