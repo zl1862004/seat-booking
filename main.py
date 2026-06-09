@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""河北北方学院 座位预约自动化 - 极速版（无第三方依赖）"""
+"""河北北方学院 座位预约自动化 - 零点秒发版（无第三方依赖）
 
-import json, time, logging, os
+核心优化：提前启动容器 → sleep等到00:00:00 → 瞬间发请求
+延迟从~100秒降至<1秒
+"""
+
+import json, time, logging, os, sys
 from datetime import datetime, timedelta
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -24,6 +28,35 @@ TIME_END = {1: 10, 2: 12, 3: 14, 4: 16, 5: 18, 6: 20, 7: 22}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 log = logging.getLogger("SeatBooking")
+
+
+def wait_until_midnight():
+    """如果距零点10分钟以内，sleep到零点再继续"""
+    now = datetime.now()
+    # 计算下一个零点
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    diff = (midnight - now).total_seconds()
+
+    if diff <= 0:
+        # 已过零点，不用等
+        log.info(f"已过零点，立即执行")
+        return
+
+    if diff <= 600:  # 10分钟以内
+        log.info(f"距零点还有 {diff:.1f} 秒，等待中...")
+        # 精确等待：先粗等，最后1秒精细等
+        if diff > 2:
+            time.sleep(diff - 1.5)
+        # 最后1.5秒：忙等确保精度
+        while True:
+            remaining = (midnight - datetime.now()).total_seconds()
+            if remaining <= 0:
+                break
+            time.sleep(0.01)  # 10ms精度
+        log.info(f"⏰ 零点到达! 立即发请求! 当前时间: {datetime.now().strftime('%H:%M:%S.%f')}")
+    else:
+        # 超过10分钟，可能是手动触发或测试，不等待
+        log.info(f"距零点还有 {diff/60:.1f} 分钟，直接执行(不等待)")
 
 
 def http_post(url, data=None, json_data=None, headers=None, timeout=10):
@@ -108,6 +141,33 @@ class SeatBookingBot:
             log.info(f"  已清理 {c} 条过期预约")
         return c
 
+    def auto_cancel_if_exceeded(self):
+        """清理过期预约，有效预约绝不自动删除"""
+        items = self.get_apply_list()
+        if not items:
+            return True
+        today = datetime.now().strftime("%Y-%m-%d")
+        expired = [i for i in items
+                   if i.get("applyDate", "") < today
+                   or (i.get("applyDate", "") == today
+                       and datetime.now().hour >= TIME_END.get(i.get("applyTime", 0), 0))]
+        valid = [i for i in items if i not in expired]
+        # 只删除真正过期的
+        c = 0
+        for i in expired:
+            if self.cancel_apply(i.get("applyId")):
+                c += 1
+            time.sleep(0.3)
+        if c:
+            log.info(f"  已清理 {c} 条过期预约")
+        # 有效预约：绝不自动删除!
+        if len(valid) >= 2:
+            log.warning(f"有效预约已达上限({len(valid)}条)，请手动去小程序取消")
+            for v in valid:
+                log.warning(f"  有效预约: {v.get('applyDate')} {v.get('timeName')} {v.get('seatId')}")
+            return False
+        return True
+
     def init_config(self):
         try:
             result = http_post(f"{API_BASE}/init", json_data={})
@@ -154,9 +214,10 @@ class SeatBookingBot:
         r = self.post_apply(TARGET_AREA_ID, TARGET_TIME_ID, TARGET_SEAT_NO)
         if r == "success": return True
         if r == "limit_exceeded":
-            self.auto_cancel_expired()
-            r = self.post_apply(TARGET_AREA_ID, TARGET_TIME_ID, TARGET_SEAT_NO)
-            if r == "success": return True
+            # 尝试清理过期预约后重试
+            if self.auto_cancel_if_exceeded():
+                r = self.post_apply(TARGET_AREA_ID, TARGET_TIME_ID, TARGET_SEAT_NO)
+                if r == "success": return True
             if r == "limit_exceeded":
                 log.error("有效预约已满2条，请手动去小程序取消")
                 return False
@@ -184,6 +245,9 @@ class SeatBookingBot:
 
 
 if __name__ == "__main__":
+    # ===== 核心优化：等零点 =====
+    wait_until_midnight()
+
     success = False
     for attempt in range(1, MAX_RETRIES + 1):
         log.info(f"第 {attempt}/{MAX_RETRIES} 次")

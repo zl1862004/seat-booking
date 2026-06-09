@@ -2,7 +2,8 @@ name: 每日座位预约
 
 on:
   schedule:
-    - cron: '1 16 * * *'
+    # UTC 15:50 = 北京 23:50（提前启动容器，脚本会sleep等到零点秒发）
+    - cron: '50 15 * * *'
   workflow_dispatch:
 
 jobs:
@@ -11,12 +12,13 @@ jobs:
     concurrency:
       group: seat-booking
       cancel-in-progress: false
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run booking script (无依赖，直接跑)
+      - name: Run booking script (零点秒发版)
         env:
           STU_ID: ${{ secrets.STU_ID }}
           STU_NAME: ${{ secrets.STU_NAME }}
