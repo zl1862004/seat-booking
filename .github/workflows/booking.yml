@@ -2,12 +2,9 @@ name: 每日座位预约
 
 on:
   schedule:
-    # 主力：UTC 15:50 = 北京 23:50（脚本会sleep到零点秒发）
+    # GitHub cron 仅作保底（UTC 15:50 = 北京 23:50）
+    # 延迟约1-2h，抢不到24座，但能拿fallback
     - cron: '50 15 * * *'
-    # 备份1：UTC 15:30 = 北京 23:30（更早启动，防GitHub cron延迟）
-    - cron: '30 15 * * *'
-    # 备份2：UTC 16:00 = 北京 00:00（万一前面都没跑，零点再试一次）
-    - cron: '0 16 * * *'
   workflow_dispatch:
 
 jobs:
