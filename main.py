@@ -210,10 +210,22 @@ class SeatBookingBot:
             log.error(f"  异常: {e}")
             return "error"
 
+    def already_booked_tomorrow(self):
+        """检查明天是否已有预约，避免重复请求触发风控"""
+        items = self.get_apply_list()
+        for i in items:
+            if i.get("applyDate") == self.tomorrow:
+                log.info(f"明天({self.tomorrow})已有预约: {i.get('seatId')} {i.get('timeName')}，跳过")
+                return True
+        return False
+
     def run(self):
         log.info(f"=== 目标: {TARGET_AREA_ID}-{TARGET_SEAT_NO} 20:00-22:00 日期: {self.tomorrow} ===")
         if not self.login():
             return False
+        # 防风控：如果明天已有预约，直接退出，不发多余请求
+        if self.already_booked_tomorrow():
+            return True
         self.auto_cancel_expired()
         if not self.init_config():
             return False
