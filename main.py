@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""河北北方学院 座位预约自动化 - 零点秒发版（无第三方依赖）
+"""河北北方学院 座位预约自动化 - 极速秒发版（无第三方依赖）
 
-核心优化：提前启动容器 → sleep等到00:00:00 → 瞬间发请求
-延迟从~100秒降至<1秒
+核心优化：提前登录+清理 → sleep到00:00:00 → 只发postApply
+零点到预约请求仅需1-2秒（旧版需12秒）
 """
 
 import json, time, logging, os, sys
@@ -35,35 +35,6 @@ log = logging.getLogger("SeatBooking")
 def now_beijing():
     """获取当前北京时间（无论服务器在哪个时区）"""
     return datetime.now(BEIJING_TZ)
-
-
-def wait_until_midnight():
-    """如果距北京时间零点10分钟以内，sleep到零点再继续"""
-    now = now_beijing()
-    # 计算下一个北京时间零点
-    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-    diff = (midnight - now).total_seconds()
-
-    if diff <= 0:
-        # 已过零点，不用等
-        log.info(f"已过零点，立即执行")
-        return
-
-    if diff <= 600:  # 10分钟以内
-        log.info(f"距零点还有 {diff:.1f} 秒，等待中...")
-        # 精确等待：先粗等，最后1秒精细等
-        if diff > 2:
-            time.sleep(diff - 1.5)
-        # 最后1.5秒：忙等确保精度
-        while True:
-            remaining = (midnight - now_beijing()).total_seconds()
-            if remaining <= 0:
-                break
-            time.sleep(0.01)  # 10ms精度
-        log.info(f"⏰ 零点到达! 立即发请求! 当前时间: {now_beijing().strftime('%H:%M:%S.%f')}")
-    else:
-        # 超过10分钟，可能是手动触发或测试，不等待
-        log.info(f"距零点还有 {diff/60:.1f} 分钟，直接执行(不等待)")
 
 
 def http_post(url, data=None, json_data=None, headers=None, timeout=10):
@@ -159,7 +130,6 @@ class SeatBookingBot:
                    or (i.get("applyDate", "") == today
                        and now_beijing().hour >= TIME_END.get(i.get("applyTime", 0), 0))]
         valid = [i for i in items if i not in expired]
-        # 只删除真正过期的
         c = 0
         for i in expired:
             if self.cancel_apply(i.get("applyId")):
@@ -167,7 +137,6 @@ class SeatBookingBot:
             time.sleep(0.3)
         if c:
             log.info(f"  已清理 {c} 条过期预约")
-        # 有效预约：绝不自动删除!
         if len(valid) >= 2:
             log.warning(f"有效预约已达上限({len(valid)}条)，请手动去小程序取消")
             for v in valid:
@@ -219,21 +188,25 @@ class SeatBookingBot:
                 return True
         return False
 
-    def run(self):
-        log.info(f"=== 目标: {TARGET_AREA_ID}-{TARGET_SEAT_NO} 20:00-22:00 日期: {self.tomorrow} ===")
+    def pre_login(self):
+        """提前完成登录、查列表、清理过期、init——零点前全部做完
+        注意：already_booked_tomorrow 检查移到 fire 阶段，因为零点后 tomorrow 会变"""
+        log.info(f"=== 目标: {TARGET_AREA_ID}-{TARGET_SEAT_NO} 20:00-22:00 ===")
         if not self.login():
             return False
-        # 防风控：如果明天已有预约，直接退出，不发多余请求
-        if self.already_booked_tomorrow():
-            return True
+        # 提前清理过期预约
         self.auto_cancel_expired()
+        # 提前获取可预约日期
         if not self.init_config():
             return False
+        log.info("⏳ 预处理完成，等待零点秒发...")
+        return True
 
+    def fire(self):
+        """零点瞬间只发预约请求，不再登录/查列表"""
         r = self.post_apply(TARGET_AREA_ID, TARGET_TIME_ID, TARGET_SEAT_NO)
         if r == "success": return True
         if r == "limit_exceeded":
-            # 尝试清理过期预约后重试
             if self.auto_cancel_if_exceeded():
                 r = self.post_apply(TARGET_AREA_ID, TARGET_TIME_ID, TARGET_SEAT_NO)
                 if r == "success": return True
@@ -263,20 +236,71 @@ class SeatBookingBot:
         return False
 
 
-if __name__ == "__main__":
-    # ===== 核心优化：等零点 =====
-    wait_until_midnight()
+def wait_until_midnight():
+    """等到北京时间00:00:00，精度10ms"""
+    now = now_beijing()
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    diff = (midnight - now).total_seconds()
 
-    success = False
-    for attempt in range(1, MAX_RETRIES + 1):
-        log.info(f"第 {attempt}/{MAX_RETRIES} 次")
-        bot = SeatBookingBot()
-        if bot.run():
-            success = True
-            log.info("预约成功!")
+    if diff <= 0:
+        log.info("已过零点，立即执行")
+        return False  # 不需要等
+
+    if diff > 600:
+        log.info(f"距零点还有 {diff/60:.1f} 分钟，直接执行(不等待)")
+        return False
+
+    # 10分钟以内，等待
+    log.info(f"距零点还有 {diff:.1f} 秒，等待中...")
+    if diff > 2:
+        time.sleep(diff - 1.5)
+    # 最后1.5秒忙等
+    while True:
+        remaining = (midnight - now_beijing()).total_seconds()
+        if remaining <= 0:
             break
-        elif attempt < MAX_RETRIES:
+        time.sleep(0.01)
+    log.info(f"⏰ 零点到达! 当前时间: {now_beijing().strftime('%H:%M:%S.%f')}")
+    return True
+
+
+if __name__ == "__main__":
+    # ===== 极速秒发流程 =====
+    # 1. 提前登录+清理（零点前做完）
+    bot = SeatBookingBot()
+    pre = bot.pre_login()
+
+    if not pre:
+        log.error("预处理失败，退出")
+        exit(1)
+
+    # 2. 等零点
+    waited = wait_until_midnight()
+
+    # 3. 零点瞬间只发预约请求
+    if waited:
+        # 等过零点了，tomorrow 需要重新计算
+        bot.tomorrow = (now_beijing() + timedelta(days=1)).strftime("%Y-%m-%d")
+        log.info(f"零点后重新计算日期: {bot.tomorrow}")
+    else:
+        # 非零点模式（备份/GitHub cron延迟触发）：先检查是否已有预约
+        if bot.already_booked_tomorrow():
+            exit(0)
+
+    success = bot.fire()
+    if not success:
+        # 重试：重新登录+发请求
+        for attempt in range(1, MAX_RETRIES + 1):
+            log.info(f"重试 {attempt}/{MAX_RETRIES}")
+            bot2 = SeatBookingBot()
+            if bot2.pre_login() is True:
+                if not waited and bot2.already_booked_tomorrow():
+                    success = True
+                    break
+                if bot2.fire():
+                    success = True
+                    break
             time.sleep(RETRY_INTERVAL)
-        else:
-            log.error("预约失败。")
+
+    log.info("预约成功!" if success else "预约失败。")
     exit(0 if success else 1)
