@@ -246,7 +246,7 @@ def wait_until_midnight():
         log.info("已过零点，立即执行")
         return False  # 不需要等
 
-    if diff > 600:
+    if diff > 4200:  # 超过70分钟，不等待（手动触发/测试）
         log.info(f"距零点还有 {diff/60:.1f} 分钟，直接执行(不等待)")
         return False
 

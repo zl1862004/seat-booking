@@ -2,9 +2,9 @@ name: 每日座位预约
 
 on:
   schedule:
-    # GitHub cron 仅作保底（UTC 15:50 = 北京 23:50）
-    # 延迟约1-2h，抢不到24座，但能拿fallback
-    - cron: '50 15 * * *'
+    # 提前启动容器，脚本会sleep到北京时间00:00:00秒发
+    # cron延迟通常30-60分钟，设23:00大概率23:30-00:00之间启动
+    - cron: '0 15 * * *'   # UTC 15:00 = 北京 23:00
   workflow_dispatch:
 
 jobs:
@@ -13,7 +13,7 @@ jobs:
     concurrency:
       group: seat-booking
       cancel-in-progress: false
-    timeout-minutes: 15
+    timeout-minutes: 70
 
     steps:
       - name: Checkout
