@@ -1,10 +1,9 @@
 name: 每日座位预约
 
 on:
-  schedule:
-    # 提前启动容器，脚本会sleep到北京时间00:00:00秒发
-    # cron延迟通常30-60分钟，设23:00大概率23:30-00:00之间启动
-    - cron: '0 15 * * *'   # UTC 15:00 = 北京 23:00
+  # schedule 暂时禁用，需要时恢复
+  # schedule:
+  #   - cron: '0 15 * * *'
   workflow_dispatch:
 
 jobs:
